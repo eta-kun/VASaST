@@ -1440,7 +1440,7 @@ const loadFfmpeg = async () => {
         const coreURL = await toBlobURL(`${coreBaseURL}/ffmpeg-core.js`, "text/javascript");
         const wasmURL = await toBlobURL(`${coreBaseURL}/ffmpeg-core.wasm`, "application/wasm");
 
-        // 2. worker.js を取得し、内部の相対パス(./)をCDNの絶対パスに書き換える
+        // 2. worker.js を取得し、内部の相対パス(./)をCDNの絶対パスに置換
         const workerResponse = await fetch(`${ffmpegBaseURL}/worker.js`);
         let workerCode = await workerResponse.text();
         workerCode = workerCode.replaceAll('from "./', `from "${ffmpegBaseURL}/`);
@@ -1452,7 +1452,7 @@ const loadFfmpeg = async () => {
 
         addLog("FFmpegワーカーを初期化中...");
 
-        // 3. Worker 起動時に type: "module" オプションを自動付与する一時パッチ
+        // 3. Workerを ES Module モード(type: "module")で起動させるための一時パッチ
         const OriginalWorker = window.Worker;
         window.Worker = class extends OriginalWorker {
           constructor(scriptURL, options) {
@@ -1467,7 +1467,7 @@ const loadFfmpeg = async () => {
             classWorkerURL
           });
         } finally {
-          // Workerクラスを元に戻す
+          // パッチを元に戻す
           window.Worker = OriginalWorker;
         }
 
