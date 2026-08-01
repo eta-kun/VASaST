@@ -1,0 +1,1725 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>MV・音声合体・分解ツール</title>
+  <style>
+    /*
+      ============================================================
+      MV・音声合体・分解ツール
+      - index.html 1ファイル構成
+      - CSSは見た目とレスポンシブに専念
+      - JavaScript側で状態管理、FFmpeg処理、後片付けを担当
+      ============================================================
+    */
+
+    :root {
+      --bg: #07111f;
+      --bg-soft: #0d1b2e;
+      --surface: rgba(255, 255, 255, 0.1);
+      --surface-strong: rgba(255, 255, 255, 0.16);
+      --surface-muted: rgba(255, 255, 255, 0.07);
+      --border: rgba(255, 255, 255, 0.18);
+      --text: #f3f7fb;
+      --muted: #a9b8c8;
+      --accent: #4ea3ff;
+      --accent-strong: #2f86eb;
+      --success: #30d158;
+      --warning: #ffd166;
+      --danger: #ff5c7a;
+      --teal: #42d9c8;
+      --shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+      --radius: 16px;
+      --focus: 0 0 0 4px rgba(78, 163, 255, 0.28);
+      --max-width: 1280px;
+      --transition: 180ms ease;
+      --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.6;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100%;
+      margin: 0;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      background:
+        radial-gradient(circle at 20% 8%, rgba(78, 163, 255, 0.22), transparent 32rem),
+        radial-gradient(circle at 84% 24%, rgba(66, 217, 200, 0.14), transparent 28rem),
+        linear-gradient(135deg, #07111f 0%, #111827 48%, #0a1524 100%);
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button,
+    label,
+    select,
+    input[type="checkbox"] {
+      cursor: pointer;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    .drop-zone:focus-visible {
+      outline: none;
+      box-shadow: var(--focus);
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(18px);
+      background: rgba(7, 17, 31, 0.72);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .header-inner,
+    .app-main {
+      width: min(100%, var(--max-width));
+      margin: 0 auto;
+      padding-inline: clamp(16px, 4vw, 28px);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 72px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(1.35rem, 3vw, 2rem);
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+
+    .header-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-muted);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--warning);
+      box-shadow: 0 0 18px rgba(255, 209, 102, 0.8);
+    }
+
+    .status-dot.ready {
+      background: var(--success);
+      box-shadow: 0 0 18px rgba(48, 209, 88, 0.8);
+    }
+
+    .status-dot.error {
+      background: var(--danger);
+      box-shadow: 0 0 18px rgba(255, 92, 122, 0.8);
+    }
+
+    .app-main {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 18px;
+      padding-block: 24px 40px;
+    }
+
+    .notice-region,
+    .footer-note {
+      grid-column: 1 / -1;
+    }
+
+    .upload-card {
+      grid-column: span 2;
+    }
+
+    .mode-card,
+    .settings-card {
+      grid-column: span 3;
+    }
+
+    .action-card,
+    .progress-card,
+    .log-card {
+      grid-column: span 2;
+    }
+
+    .notice-region {
+      position: sticky;
+      top: 82px;
+      z-index: 15;
+      display: grid;
+      gap: 10px;
+    }
+
+    .notice {
+      display: none;
+      gap: 10px;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.14);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      animation: slideIn 240ms ease;
+    }
+
+    .notice.visible {
+      display: grid;
+    }
+
+    .notice.success {
+      border-color: rgba(48, 209, 88, 0.45);
+      background: rgba(20, 90, 46, 0.35);
+    }
+
+    .notice.warning {
+      border-color: rgba(255, 209, 102, 0.55);
+      background: rgba(126, 89, 14, 0.35);
+    }
+
+    .notice.error {
+      border-color: rgba(255, 92, 122, 0.55);
+      background: rgba(122, 32, 52, 0.36);
+    }
+
+    .notice-title {
+      font-weight: 700;
+    }
+
+    .notice-detail {
+      color: rgba(255, 255, 255, 0.86);
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.07));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(22px);
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 18px 0;
+    }
+
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.12rem;
+      font-weight: 750;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(78, 163, 255, 0.16);
+      color: #cfe6ff;
+      font-size: 0.86rem;
+      white-space: nowrap;
+    }
+
+    .card-body {
+      display: grid;
+      gap: 14px;
+      padding: 16px 18px 18px;
+    }
+
+    .drop-zone {
+      position: relative;
+      display: grid;
+      gap: 12px;
+      place-items: center;
+      min-height: 148px;
+      padding: 18px;
+      border: 1px dashed rgba(255, 255, 255, 0.3);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--muted);
+      text-align: center;
+      transition: border-color var(--transition), background var(--transition), transform var(--transition), box-shadow var(--transition);
+    }
+
+    .drop-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(78, 163, 255, 0.14);
+      box-shadow: 0 0 0 1px rgba(78, 163, 255, 0.34), 0 0 32px rgba(78, 163, 255, 0.22);
+      transform: translateY(-1px);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      clip-path: inset(50%);
+    }
+
+    .drop-main {
+      display: grid;
+      gap: 8px;
+      justify-items: center;
+    }
+
+    .drop-icon {
+      display: grid;
+      place-items: center;
+      width: 58px;
+      height: 58px;
+      border-radius: 18px;
+      background: linear-gradient(145deg, rgba(78, 163, 255, 0.24), rgba(66, 217, 200, 0.12));
+      color: var(--text);
+      font-size: 1.55rem;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+
+    .select-button,
+    .primary-button {
+      border: 0;
+      border-radius: var(--radius);
+      color: white;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      box-shadow: 0 14px 30px rgba(47, 134, 235, 0.32);
+      transition: transform var(--transition), filter var(--transition), opacity var(--transition);
+    }
+
+    .select-button {
+      min-height: 44px;
+      padding: 10px 16px;
+      font-weight: 700;
+    }
+
+    .primary-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      min-height: 62px;
+      padding: 14px 20px;
+      font-size: 1.1rem;
+      font-weight: 800;
+    }
+
+    .select-button:hover,
+    .primary-button:hover:not(:disabled) {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+
+    .primary-button:disabled,
+    .select-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.58;
+      transform: none;
+      filter: grayscale(0.2);
+    }
+
+    .hint,
+    .small-text {
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .file-info {
+      display: none;
+      gap: 8px;
+      padding: 14px;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .file-info.visible {
+      display: grid;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .info-item {
+      min-width: 0;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .info-label {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .info-value {
+      overflow-wrap: anywhere;
+      font-weight: 650;
+    }
+
+    .thumbnail-preview {
+      display: none;
+      width: min(100%, 360px);
+      aspect-ratio: 16 / 9;
+      margin: 0 auto;
+      border-radius: var(--radius);
+      object-fit: contain;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .thumbnail-preview.visible {
+      display: block;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    .field label,
+    .setting-label {
+      color: #dce8f6;
+      font-weight: 650;
+    }
+
+    .text-input,
+    .select-input,
+    textarea {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 14px;
+      padding: 11px 13px;
+      background: rgba(3, 8, 16, 0.32);
+      color: var(--text);
+      transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+    }
+
+    .text-input::placeholder,
+    textarea::placeholder {
+      color: rgba(169, 184, 200, 0.7);
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .setting-box {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .setting-notes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .encode-options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .mode-options {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .encode-option {
+      position: relative;
+    }
+
+    .encode-option input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      clip-path: inset(50%);
+    }
+
+    .encode-option > span {
+      display: grid;
+      gap: 4px;
+      min-height: 112px;
+      padding: 11px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.07);
+      transition: border-color var(--transition), background var(--transition), transform var(--transition);
+    }
+
+    .encode-option input:checked + span {
+      border-color: rgba(78, 163, 255, 0.75);
+      background: rgba(78, 163, 255, 0.17);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+
+    .encode-option input:focus-visible + span {
+      box-shadow: var(--focus);
+    }
+
+    .encode-option strong {
+      color: var(--text);
+      font-size: 0.98rem;
+    }
+
+    .estimate {
+      color: #cfe6ff;
+      font-weight: 700;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .checkbox-row input {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 auto;
+      accent-color: var(--accent);
+      margin-top: 2px;
+    }
+
+    .disabled-box {
+      opacity: 0.76;
+    }
+
+    .progress-wrap {
+      display: grid;
+      gap: 10px;
+    }
+
+    .progress-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-weight: 650;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 16px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.11);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .progress-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--teal));
+      transition: width 220ms ease;
+    }
+
+    .log-box {
+      height: 190px;
+      overflow: auto;
+      padding: 14px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(0, 0, 0, 0.32);
+      color: #d7e8ff;
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+
+    .log-line {
+      padding-block: 2px;
+      overflow-wrap: anywhere;
+    }
+
+    .spinner {
+      display: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, 0.38);
+      border-top-color: white;
+      animation: spin 800ms linear infinite;
+    }
+
+    .spinner.visible {
+      display: inline-block;
+    }
+
+    .footer-note {
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 720px) {
+      .header-inner {
+        align-items: flex-start;
+        flex-direction: column;
+        justify-content: center;
+        padding-block: 14px;
+      }
+
+      .header-status {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .card-header {
+        flex-direction: column;
+      }
+
+      .app-main {
+        grid-template-columns: 1fr;
+      }
+
+      .notice-region,
+      .upload-card,
+      .mode-card,
+      .settings-card,
+      .action-card,
+      .progress-card,
+      .log-card,
+      .footer-note {
+        grid-column: 1 / -1;
+      }
+
+      .form-grid,
+      .settings-grid,
+      .encode-options,
+      .setting-notes,
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .drop-zone {
+        min-height: 160px;
+      }
+
+      .notice-region {
+        top: 116px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <h1>MV・音声合体・分解ツール</h1>
+      <div class="header-status" aria-live="polite">
+        <span id="statusDot" class="status-dot" aria-hidden="true"></span>
+        <span id="statusText">FFmpeg未読み込み</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="notice-region" aria-live="assertive" aria-atomic="true">
+      <div id="notice" class="notice" role="alert">
+        <div id="noticeTitle" class="notice-title"></div>
+        <div id="noticeDetail" class="notice-detail"></div>
+      </div>
+    </section>
+
+    <section class="card upload-card" aria-labelledby="videoTitle">
+      <div class="card-header">
+        <h2 id="videoTitle" class="card-title">1. 動画</h2>
+        <span class="badge">mp4 / mov / mkv / avi / webm</span>
+      </div>
+      <div class="card-body">
+        <label id="videoDropZone" class="drop-zone" tabindex="0">
+          <input id="videoInput" type="file" accept=".mp4,.mov,.mkv,.avi,.webm,video/*">
+          <span class="drop-main">
+            <span class="drop-icon" aria-hidden="true">🎬</span>
+            <strong>動画をドラッグ&ドロップ</strong>
+            <span class="hint">または</span>
+            <span class="select-button">動画を選択</span>
+          </span>
+        </label>
+        <div id="videoInfo" class="file-info" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="card upload-card" aria-labelledby="audioTitle">
+      <div class="card-header">
+        <h2 id="audioTitle" class="card-title">2. 音声</h2>
+        <span class="badge">wav / mp3 / flac / aac / m4a / ogg / opus</span>
+      </div>
+      <div class="card-body">
+        <label id="audioDropZone" class="drop-zone" tabindex="0">
+          <input id="audioInput" type="file" accept=".wav,.mp3,.flac,.aac,.m4a,.ogg,.opus,audio/*">
+          <span class="drop-main">
+            <span class="drop-icon" aria-hidden="true">🎧</span>
+            <strong>音声をドラッグ&ドロップ</strong>
+            <span class="hint">または</span>
+            <span class="select-button">音声を選択</span>
+          </span>
+        </label>
+        <div id="audioInfo" class="file-info" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="card upload-card" aria-labelledby="thumbnailTitle">
+      <div class="card-header">
+        <h2 id="thumbnailTitle" class="card-title">3. サムネイル</h2>
+        <span class="badge">jpg / jpeg / png / webp</span>
+      </div>
+      <div class="card-body">
+        <label id="thumbnailDropZone" class="drop-zone" tabindex="0">
+          <input id="thumbnailInput" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+          <span class="drop-main">
+            <span class="drop-icon" aria-hidden="true">🖼️</span>
+            <strong>サムネイルをドラッグ&ドロップ</strong>
+            <span class="hint">モバイルではタップして選択できます</span>
+            <span class="select-button">画像を選択</span>
+          </span>
+        </label>
+        <img id="thumbnailPreview" class="thumbnail-preview" alt="選択したサムネイルのプレビュー">
+        <div id="thumbnailInfo" class="file-info" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="card mode-card" aria-labelledby="modeTitle">
+      <div class="card-header">
+        <h2 id="modeTitle" class="card-title">4. 処理モード</h2>
+        <span class="badge">合体 / 分解</span>
+      </div>
+      <div class="card-body">
+        <div class="setting-box" role="radiogroup" aria-labelledby="processModeLabel">
+          <div id="processModeLabel" class="setting-label">作成内容</div>
+          <div class="encode-options mode-options">
+            <label class="encode-option">
+              <input type="radio" name="processMode" value="merge" checked>
+              <span>
+                <strong>合体</strong>
+                <span class="estimate">動画 + 音声</span>
+                <span class="small-text">動画と音声を合わせて、MP4を1つ作成します。</span>
+              </span>
+            </label>
+            <label class="encode-option">
+              <input type="radio" name="processMode" value="split">
+              <span>
+                <strong>分解</strong>
+                <span class="estimate">動画のみ + 音声のみ</span>
+                <span class="small-text">動画から映像と音声を分けて、2つのファイルを作成します。</span>
+              </span>
+            </label>
+          </div>
+        </div>
+        <div class="setting-box">
+          <span class="setting-label">分解時の入力</span>
+          <span class="small-text">分解モードでは動画ファイルだけを使用します。音声欄とサムネイル欄に選んだファイルは無視されます。</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card settings-card" aria-labelledby="settingsTitle">
+      <div class="card-header">
+        <h2 id="settingsTitle" class="card-title">5. エンコード設定</h2>
+        <span class="badge">MP4 / H.264 / AAC</span>
+      </div>
+      <div class="card-body">
+        <div class="settings-grid">
+          <div class="setting-box" role="radiogroup" aria-labelledby="encodePresetLabel">
+            <div id="encodePresetLabel" class="setting-label">速度と品質</div>
+            <div class="encode-options">
+              <label class="encode-option">
+                <input type="radio" name="encodePreset" value="fastLow">
+                <span>
+                  <strong>高速／低品質</strong>
+                  <span class="estimate">目安: 標準の約65%</span>
+                  <span class="small-text">短時間で作成。画質と圧縮効率は控えめです。</span>
+                </span>
+              </label>
+              <label class="encode-option">
+                <input type="radio" name="encodePreset" value="standard" checked>
+                <span>
+                  <strong>標準</strong>
+                  <span class="estimate">目安: 100%</span>
+                  <span class="small-text">多くの場合に扱いやすいバランスです。</span>
+                </span>
+              </label>
+              <label class="encode-option">
+                <input type="radio" name="encodePreset" value="slowHigh">
+                <span>
+                  <strong>低速／高品質</strong>
+                  <span class="estimate">目安: 標準の約160%</span>
+                  <span class="small-text">時間は長め。画質と圧縮効率を優先します。</span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-notes">
+            <div class="setting-box">
+              <span class="setting-label">自動処理</span>
+              <span class="small-text">合体時は元動画の音声を選択した音声に置き換えます。サムネイルは選択済みの場合のみ埋め込みます。</span>
+            </div>
+            <div class="setting-box disabled-box">
+              <span class="setting-label">GPU利用</span>
+              <span class="small-text">現在は無効です。ブラウザ版FFmpeg.wasmでは未対応のため、将来のネイティブ版向け予約機能です。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card action-card" aria-labelledby="runTitle">
+      <div class="card-header">
+        <h2 id="runTitle" class="card-title">6. 実行</h2>
+        <span class="badge">自動ダウンロード</span>
+      </div>
+      <div class="card-body">
+        <button id="startButton" class="primary-button" type="button">
+          <span id="buttonSpinner" class="spinner" aria-hidden="true"></span>
+          <span id="buttonText">🚀 作成開始</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="card progress-card" aria-labelledby="progressTitle">
+      <div class="card-header">
+        <h2 id="progressTitle" class="card-title">7. 進捗バー</h2>
+        <span class="badge">0〜100%</span>
+      </div>
+      <div class="card-body">
+        <div class="progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="progressLabel">
+          <div class="progress-top">
+            <span id="progressLabel">待機中</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card log-card" aria-labelledby="logTitle">
+      <div class="card-header">
+        <h2 id="logTitle" class="card-title">8. ログ</h2>
+        <span class="badge">リアルタイム表示</span>
+      </div>
+      <div class="card-body">
+        <div id="logBox" class="log-box" role="log" aria-live="polite" aria-label="処理ログ"></div>
+      </div>
+    </section>
+
+    <p class="footer-note">処理はすべてブラウザ内で実行されます。大きなファイルでは端末のメモリに余裕を持って実行してください。</p>
+  </main>
+
+  <script type="module">
+    /*
+      ============================================================
+      JavaScript構成
+      1. 定数・状態
+      2. 汎用ユーティリティ
+      3. UI更新
+      4. ファイル選択・解析
+      5. 設定保存
+      6. FFmpeg読み込み・実行
+      7. 初期化
+      ============================================================
+    */
+
+import { FFmpeg } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm/index.js";
+import { fetchFile, toBlobURL } from "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js";
+
+const CDN = {
+  CORE_BASE_URL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd",
+  MIME_JS: "text/javascript",
+  MIME_WASM: "application/wasm"
+};
+
+    const FILE_RULES = {
+      video: {
+        label: "動画",
+        extensions: ["mp4", "mov", "mkv", "avi", "webm"]
+      },
+      audio: {
+        label: "音声",
+        extensions: ["wav", "mp3", "flac", "aac", "m4a", "ogg", "opus"]
+      },
+      thumbnail: {
+        label: "サムネイル",
+        extensions: ["jpg", "jpeg", "png", "webp"]
+      }
+    };
+
+    const ENCODE_PROFILES = {
+      fastLow: {
+        label: "高速／低品質",
+        preset: "veryfast",
+        crf: "28",
+        audioBitrate: "128k",
+        estimatePercent: 65
+      },
+      standard: {
+        label: "標準",
+        preset: "medium",
+        crf: "23",
+        audioBitrate: "192k",
+        estimatePercent: 100
+      },
+      slowHigh: {
+        label: "低速／高品質",
+        preset: "slow",
+        crf: "19",
+        audioBitrate: "256k",
+        estimatePercent: 160
+      }
+    };
+
+    const STORAGE_KEY = "mvAudioMergeToolSettingsV1";
+    const OUTPUT_FILE_NAMES = {
+      merged: "mv-audio-merged.mp4",
+      videoOnly: "video-only.mp4",
+      audioOnly: "audio-only.m4a"
+    };
+    const PROGRESS_LOAD_MAX = 35;
+    const PROGRESS_ENCODE_START = 35;
+    const PROGRESS_ENCODE_RANGE = 65;
+    const NOTICE_HIDE_MS = 9000;
+
+    const $ = (selector) => document.querySelector(selector);
+
+    const elements = {
+      statusDot: $("#statusDot"),
+      statusText: $("#statusText"),
+      notice: $("#notice"),
+      noticeTitle: $("#noticeTitle"),
+      noticeDetail: $("#noticeDetail"),
+      videoInput: $("#videoInput"),
+      audioInput: $("#audioInput"),
+      thumbnailInput: $("#thumbnailInput"),
+      videoDropZone: $("#videoDropZone"),
+      audioDropZone: $("#audioDropZone"),
+      thumbnailDropZone: $("#thumbnailDropZone"),
+      videoInfo: $("#videoInfo"),
+      audioInfo: $("#audioInfo"),
+      thumbnailInfo: $("#thumbnailInfo"),
+      thumbnailPreview: $("#thumbnailPreview"),
+      processModeOptions: [...document.querySelectorAll("input[name='processMode']")],
+      encodePresetOptions: [...document.querySelectorAll("input[name='encodePreset']")],
+      startButton: $("#startButton"),
+      buttonSpinner: $("#buttonSpinner"),
+      buttonText: $("#buttonText"),
+      progressLabel: $("#progressLabel"),
+      progressPercent: $("#progressPercent"),
+      progressFill: $("#progressFill"),
+      progressWrap: $(".progress-wrap"),
+      logBox: $("#logBox")
+    };
+
+    const state = {
+      ffmpeg: null,
+      isFfmpegLoaded: false,
+      isProcessing: false,
+      objectUrls: new Set(),
+      noticeTimerId: 0,
+      progressStart: PROGRESS_ENCODE_START,
+      progressRange: PROGRESS_ENCODE_RANGE,
+      progressLabel: "MP4生成中...",
+      files: {
+        video: null,
+        audio: null,
+        thumbnail: null
+      }
+    };
+
+    /*
+      ============================================================
+      汎用ユーティリティ
+      ============================================================
+    */
+
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+    const getExtension = (fileName) => {
+      const parts = fileName.toLowerCase().split(".");
+      return parts.length > 1 ? parts.pop() : "";
+    };
+
+    const formatBytes = (bytes) => {
+      const units = ["B", "KB", "MB", "GB"];
+      let size = bytes;
+      let unitIndex = 0;
+
+      while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+      }
+
+      return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+    };
+
+    const formatDuration = (seconds) => {
+      if (!Number.isFinite(seconds)) {
+        return "不明";
+      }
+
+      const totalSeconds = Math.max(0, Math.round(seconds));
+      const minutes = Math.floor(totalSeconds / 60);
+      const remainingSeconds = totalSeconds % 60;
+      return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+    };
+
+    const createObjectUrl = (file) => {
+      const url = URL.createObjectURL(file);
+      state.objectUrls.add(url);
+      return url;
+    };
+
+    const revokeObjectUrl = (url) => {
+      if (!url) {
+        return;
+      }
+      URL.revokeObjectURL(url);
+      state.objectUrls.delete(url);
+    };
+
+    const revokeAllObjectUrls = () => {
+      for (const url of state.objectUrls) {
+        URL.revokeObjectURL(url);
+      }
+      state.objectUrls.clear();
+    };
+
+    const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+    /*
+      ============================================================
+      UI更新
+      ============================================================
+    */
+
+    const addLog = (message) => {
+      const line = document.createElement("div");
+      line.className = "log-line";
+      line.textContent = `[${new Date().toLocaleTimeString("ja-JP")}] ${message}`;
+      elements.logBox.append(line);
+      elements.logBox.scrollTop = elements.logBox.scrollHeight;
+    };
+
+    const clearLog = () => {
+      elements.logBox.textContent = "";
+    };
+
+    const setStatus = (text, type = "loading") => {
+      elements.statusText.textContent = text;
+      elements.statusDot.classList.toggle("ready", type === "ready");
+      elements.statusDot.classList.toggle("error", type === "error");
+    };
+
+    const setProgress = (percent, label) => {
+      const normalized = clamp(Math.round(percent), 0, 100);
+      elements.progressLabel.textContent = label;
+      elements.progressPercent.textContent = `${normalized}%`;
+      elements.progressFill.style.width = `${normalized}%`;
+      elements.progressWrap.setAttribute("aria-valuenow", String(normalized));
+    };
+
+    const showNotice = (type, title, detail) => {
+      window.clearTimeout(state.noticeTimerId);
+      elements.notice.className = `notice visible ${type}`;
+      elements.noticeTitle.textContent = title;
+      elements.noticeDetail.textContent = detail;
+      elements.notice.scrollIntoView({ block: "nearest", behavior: "smooth" });
+
+      state.noticeTimerId = window.setTimeout(() => {
+        elements.notice.classList.remove("visible");
+      }, NOTICE_HIDE_MS);
+    };
+
+    const renderInfo = (container, items) => {
+      container.innerHTML = "";
+      container.classList.add("visible");
+
+      const grid = document.createElement("div");
+      grid.className = "info-grid";
+
+      for (const item of items) {
+        const box = document.createElement("div");
+        box.className = "info-item";
+        box.innerHTML = `
+          <div class="info-label"></div>
+          <div class="info-value"></div>
+        `;
+        box.querySelector(".info-label").textContent = item.label;
+        box.querySelector(".info-value").textContent = item.value;
+        grid.append(box);
+      }
+
+      container.append(grid);
+    };
+
+    const setProcessingUi = (isProcessing) => {
+      state.isProcessing = isProcessing;
+      elements.startButton.disabled = isProcessing;
+      elements.buttonSpinner.classList.toggle("visible", isProcessing);
+      elements.buttonText.textContent = isProcessing ? "作成中..." : "🚀 作成開始";
+
+      for (const control of [
+        elements.videoInput,
+        elements.audioInput,
+        elements.thumbnailInput,
+        ...elements.processModeOptions,
+        ...elements.encodePresetOptions
+      ]) {
+        control.disabled = isProcessing;
+      }
+    };
+
+    /*
+      ============================================================
+      ファイル選択・解析
+      ============================================================
+    */
+
+    const validateFile = (file, kind) => {
+      const extension = getExtension(file.name);
+      const rule = FILE_RULES[kind];
+
+      if (!rule.extensions.includes(extension)) {
+        throw new Error(`${rule.label}形式に対応していません。対応形式: ${rule.extensions.join(", ")}`);
+      }
+    };
+
+    const readMediaMetadata = (file, mediaType) => new Promise((resolve, reject) => {
+      const media = document.createElement(mediaType);
+      const url = createObjectUrl(file);
+
+      const cleanup = () => {
+        media.removeAttribute("src");
+        media.load();
+        revokeObjectUrl(url);
+      };
+
+      media.preload = "metadata";
+      media.onloadedmetadata = () => {
+        const metadata = {
+          duration: media.duration,
+          width: media.videoWidth || null,
+          height: media.videoHeight || null
+        };
+        cleanup();
+        resolve(metadata);
+      };
+      media.onerror = () => {
+        cleanup();
+        reject(new Error("メディア情報を読み取れませんでした。ファイルが破損している可能性があります。"));
+      };
+      media.src = url;
+    });
+
+    const handleVideoFile = async (file) => {
+      validateFile(file, "video");
+      addLog("動画解析中...");
+      const metadata = await readMediaMetadata(file, "video");
+      state.files.video = { file, metadata };
+      renderInfo(elements.videoInfo, [
+        { label: "ファイル名", value: file.name },
+        { label: "サイズ", value: formatBytes(file.size) },
+        { label: "長さ", value: formatDuration(metadata.duration) },
+        { label: "解像度", value: metadata.width && metadata.height ? `${metadata.width} × ${metadata.height}` : "不明" }
+      ]);
+    };
+
+    const handleAudioFile = async (file) => {
+      validateFile(file, "audio");
+      addLog("音声解析中...");
+      const metadata = await readMediaMetadata(file, "audio");
+      state.files.audio = { file, metadata };
+      renderInfo(elements.audioInfo, [
+        { label: "ファイル名", value: file.name },
+        { label: "サイズ", value: formatBytes(file.size) },
+        { label: "長さ", value: formatDuration(metadata.duration) }
+      ]);
+    };
+
+    const handleThumbnailFile = async (file) => {
+      validateFile(file, "thumbnail");
+
+      if (elements.thumbnailPreview.src) {
+        revokeObjectUrl(elements.thumbnailPreview.src);
+      }
+
+      const previewUrl = createObjectUrl(file);
+      elements.thumbnailPreview.src = previewUrl;
+      elements.thumbnailPreview.classList.add("visible");
+      state.files.thumbnail = { file };
+
+      renderInfo(elements.thumbnailInfo, [
+        { label: "ファイル名", value: file.name },
+        { label: "サイズ", value: formatBytes(file.size) }
+      ]);
+    };
+
+    const handleSelectedFile = async (file, kind) => {
+      if (!file || state.isProcessing) {
+        return;
+      }
+
+      try {
+        if (kind === "video") {
+          await handleVideoFile(file);
+        } else if (kind === "audio") {
+          await handleAudioFile(file);
+        } else {
+          await handleThumbnailFile(file);
+        }
+      } catch (error) {
+        showNotice("error", `${FILE_RULES[kind].label}の読み込みに失敗しました`, `${error.message} 別のファイルを選択してください。`);
+        addLog(`エラー: ${error.message}`);
+      }
+    };
+
+    const bindFilePicker = (input, dropZone, kind) => {
+      input.addEventListener("change", () => {
+        handleSelectedFile(input.files?.[0], kind);
+      });
+
+      dropZone.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          input.click();
+        }
+      });
+
+      for (const eventName of ["dragenter", "dragover"]) {
+        dropZone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          if (!state.isProcessing) {
+            dropZone.classList.add("dragover");
+          }
+        });
+      }
+
+      for (const eventName of ["dragleave", "drop"]) {
+        dropZone.addEventListener(eventName, () => {
+          dropZone.classList.remove("dragover");
+        });
+      }
+
+      dropZone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        handleSelectedFile(event.dataTransfer.files?.[0], kind);
+      });
+    };
+
+    /*
+      ============================================================
+      設定保存
+      ============================================================
+    */
+
+    const getSelectedEncodePreset = () => {
+      const selected = elements.encodePresetOptions.find((option) => option.checked);
+      return selected?.value ?? "standard";
+    };
+
+    const getSelectedProcessMode = () => {
+      const selected = elements.processModeOptions.find((option) => option.checked);
+      return selected?.value ?? "merge";
+    };
+
+    const readSettingsFromUi = () => ({
+      processMode: getSelectedProcessMode(),
+      encodePreset: getSelectedEncodePreset()
+    });
+
+    const saveSettings = () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(readSettingsFromUi()));
+    };
+
+    const restoreSettings = () => {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      try {
+        const settings = JSON.parse(raw);
+        const mode = settings.processMode ?? "merge";
+        const normalizedMode = ["merge", "split"].includes(mode) ? mode : "merge";
+        for (const option of elements.processModeOptions) {
+          option.checked = option.value === normalizedMode;
+        }
+
+        const preset = settings.encodePreset ?? settings.speed ?? "standard";
+        const normalizedPreset = ENCODE_PROFILES[preset] ? preset : "standard";
+        for (const option of elements.encodePresetOptions) {
+          option.checked = option.value === normalizedPreset;
+        }
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    };
+
+    const bindSettingsStorage = () => {
+      for (const control of [
+        ...elements.processModeOptions,
+        ...elements.encodePresetOptions
+      ]) {
+        control.addEventListener("change", saveSettings);
+      }
+    };
+
+    /*
+      ============================================================
+      FFmpeg読み込み・実行
+      ============================================================
+    */
+
+    const fetchAsBlobUrl = async (url, mimeType, onProgress) => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`CDNから取得できませんでした: ${response.status}`);
+      }
+
+      const total = Number(response.headers.get("content-length")) || 0;
+      const reader = response.body?.getReader();
+
+      if (!reader) {
+        const blob = await response.blob();
+        onProgress(1);
+        return URL.createObjectURL(new Blob([blob], { type: mimeType }));
+      }
+
+      const chunks = [];
+      let loaded = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        chunks.push(value);
+        loaded += value.byteLength;
+        if (total > 0) {
+          onProgress(loaded / total);
+        }
+      }
+
+      onProgress(1);
+      return URL.createObjectURL(new Blob(chunks, { type: mimeType }));
+    };
+
+const loadFfmpeg = async () => {
+      if (state.isFfmpegLoaded) {
+        return;
+      }
+
+      setStatus("FFmpeg読み込み中");
+      setProgress(0, "FFmpegを読み込んでいます...");
+      addLog("FFmpeg読み込み中...");
+
+      const ffmpeg = new FFmpeg();
+      state.ffmpeg = ffmpeg;
+
+      ffmpeg.on("log", ({ message }) => {
+        if (message) {
+          addLog(message);
+        }
+      });
+
+      ffmpeg.on("progress", ({ progress }) => {
+        const encodeProgress = state.progressStart + progress * state.progressRange;
+        setProgress(encodeProgress, state.progressLabel);
+      });
+
+      try {
+        addLog("CDNからスクリプトを取得中...");
+        
+        // ffmpeg-core (UMD) の JS と WASM のみを Blob URL に変換
+        const coreURL = await toBlobURL(`${CDN.CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript");
+        const wasmURL = await toBlobURL(`${CDN.CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm");
+
+        addLog("FFmpegワーカーを初期化中...");
+
+        await ffmpeg.load({
+          coreURL,
+          wasmURL
+        });
+
+        state.isFfmpegLoaded = true;
+        setStatus("FFmpeg準備完了", "ready");
+        setProgress(PROGRESS_LOAD_MAX, "FFmpeg.wasm 準備完了");
+        addLog("FFmpeg.wasm 準備完了");
+      } catch (err) {
+        addLog(`読み込みエラー詳細: ${err.message || err}`);
+        throw err;
+      }
+    };
+
+    const setEncodeProgressPhase = (start, range, label) => {
+      state.progressStart = start;
+      state.progressRange = range;
+      state.progressLabel = label;
+    };
+
+    const buildMergeArgs = (paths) => {
+      const settings = readSettingsFromUi();
+      const profile = ENCODE_PROFILES[settings.encodePreset] ?? ENCODE_PROFILES.standard;
+      const hasThumbnail = Boolean(paths.thumbnail);
+      const args = ["-i", paths.video, "-i", paths.audio];
+
+      if (hasThumbnail) {
+        args.push("-i", paths.thumbnail);
+      }
+
+      args.push(
+        "-map", "0:v:0",
+        "-map", "1:a:0"
+      );
+
+      if (hasThumbnail) {
+        args.push(
+          "-map", "2:v:0",
+          "-disposition:v:1", "attached_pic"
+        );
+      }
+
+      args.push(
+        "-c:v:0", "libx264",
+        "-preset", profile.preset,
+        "-crf", profile.crf,
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", profile.audioBitrate,
+        "-movflags", "+faststart"
+      );
+
+      if (hasThumbnail) {
+        args.push("-c:v:1", "mjpeg");
+      }
+
+      args.push("-y", paths.output);
+      return args;
+    };
+
+    const buildVideoOnlyArgs = (paths) => {
+      const settings = readSettingsFromUi();
+      const profile = ENCODE_PROFILES[settings.encodePreset] ?? ENCODE_PROFILES.standard;
+
+      return [
+        "-i", paths.video,
+        "-map", "0:v:0",
+        "-an",
+        "-c:v", "libx264",
+        "-preset", profile.preset,
+        "-crf", profile.crf,
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-y", paths.videoOnlyOutput
+      ];
+    };
+
+    const buildAudioOnlyArgs = (paths) => {
+      const settings = readSettingsFromUi();
+      const profile = ENCODE_PROFILES[settings.encodePreset] ?? ENCODE_PROFILES.standard;
+
+      return [
+        "-i", paths.video,
+        "-map", "0:a:0",
+        "-vn",
+        "-c:a", "aac",
+        "-b:a", profile.audioBitrate,
+        "-y", paths.audioOnlyOutput
+      ];
+    };
+
+    const validateBeforeStart = () => {
+      const mode = getSelectedProcessMode();
+
+      if (!state.files.video) {
+        showNotice("error", "動画が選択されていません", "動画ファイルを選択してから作成を開始してください。");
+        return false;
+      }
+
+      if (mode === "merge" && !state.files.audio) {
+        showNotice("error", "音声が選択されていません", "音声ファイルを選択してから作成を開始してください。");
+        return false;
+      }
+
+      if (mode === "merge" && !state.files.thumbnail) {
+        showNotice("warning", "サムネイルは設定されません", "サムネイル未選択のため、画像なしでMP4を生成します。");
+        addLog("警告: サムネイルは設定されません");
+      }
+
+      return true;
+    };
+
+    const downloadBlob = (blob, fileName) => {
+      const url = createObjectUrl(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+
+      window.setTimeout(() => {
+        revokeObjectUrl(url);
+      }, 1000);
+    };
+
+    const safeDeleteFile = async (path) => {
+      if (!path || !state.ffmpeg) {
+        return;
+      }
+
+      try {
+        await state.ffmpeg.deleteFile(path);
+      } catch {
+        // すでに削除済み、または未作成の場合は後片付けを続行します。
+      }
+    };
+
+    const cleanupVirtualFiles = async (paths) => {
+      for (const path of Object.values(paths)) {
+        await safeDeleteFile(path);
+      }
+    };
+
+    const getFriendlyError = (error) => {
+      const message = String(error?.message || error || "");
+
+      if (/memory|out of bounds|allocation/i.test(message)) {
+        return {
+          title: "メモリ不足です",
+          detail: "ファイルが大きすぎる可能性があります。ブラウザを再読み込みし、他のタブを閉じてから小さめのファイルで再試行してください。"
+        };
+      }
+
+      if (/fetch|network|cdn|load/i.test(message)) {
+        return {
+          title: "FFmpegの読み込みに失敗しました",
+          detail: "ネットワーク接続、CDNへのアクセス、ローカルサーバーで開いているかを確認してから再試行してください。"
+        };
+      }
+
+      if (/not supported|codec|Invalid data/i.test(message)) {
+        return {
+          title: "エンコードに失敗しました",
+          detail: "入力ファイルの形式、コーデック、破損の有無を確認してください。別形式へ変換したファイルで改善する場合があります。"
+        };
+      }
+
+      if (/0:a:0|audio.*stream|matches no streams/i.test(message)) {
+        return {
+          title: "音声トラックが見つかりません",
+          detail: "分解しようとした動画に音声が含まれていない可能性があります。音声入りの動画を選択して再試行してください。"
+        };
+      }
+
+      return {
+        title: "エラーが発生しました",
+        detail: "ブラウザを再読み込みして再試行してください。改善しない場合は、別のファイルまたは小さいファイルで確認してください。"
+      };
+    };
+
+    const runEncoding = async () => {
+      if (state.isProcessing || !validateBeforeStart()) {
+        return;
+      }
+
+      const mode = getSelectedProcessMode();
+      const paths = {
+        video: `input-video.${getExtension(state.files.video.file.name)}`,
+        audio: state.files.audio ? `input-audio.${getExtension(state.files.audio.file.name)}` : "",
+        thumbnail: state.files.thumbnail ? `thumbnail.${getExtension(state.files.thumbnail.file.name)}` : "",
+        output: OUTPUT_FILE_NAMES.merged,
+        videoOnlyOutput: OUTPUT_FILE_NAMES.videoOnly,
+        audioOnlyOutput: OUTPUT_FILE_NAMES.audioOnly
+      };
+
+      setProcessingUi(true);
+      clearLog();
+      setProgress(0, "開始準備中...");
+
+      try {
+        await loadFfmpeg();
+
+        addLog("動画を書き込み中...");
+        await state.ffmpeg.writeFile(paths.video, await fetchFile(state.files.video.file));
+
+        if (mode === "merge") {
+          addLog("音声処理中...");
+          await state.ffmpeg.writeFile(paths.audio, await fetchFile(state.files.audio.file));
+        }
+
+        if (mode === "merge" && state.files.thumbnail) {
+          addLog("サムネイル処理中...");
+          await state.ffmpeg.writeFile(paths.thumbnail, await fetchFile(state.files.thumbnail.file));
+        }
+
+        if (mode === "merge") {
+          setEncodeProgressPhase(PROGRESS_ENCODE_START, PROGRESS_ENCODE_RANGE, "MP4生成中...");
+          const args = buildMergeArgs(paths);
+          addLog("MP4生成中...");
+          await state.ffmpeg.exec(args);
+
+          const data = await state.ffmpeg.readFile(paths.output);
+          const blob = new Blob([data.buffer], { type: "video/mp4" });
+          downloadBlob(blob, OUTPUT_FILE_NAMES.merged);
+        } else {
+          setEncodeProgressPhase(PROGRESS_ENCODE_START, 45, "動画を書き出し中...");
+          addLog("動画を書き出し中...");
+          await state.ffmpeg.exec(buildVideoOnlyArgs(paths));
+          const videoData = await state.ffmpeg.readFile(paths.videoOnlyOutput);
+          downloadBlob(new Blob([videoData.buffer], { type: "video/mp4" }), OUTPUT_FILE_NAMES.videoOnly);
+
+          setEncodeProgressPhase(80, 20, "音声を書き出し中...");
+          addLog("音声を書き出し中...");
+          await state.ffmpeg.exec(buildAudioOnlyArgs(paths));
+          const audioData = await state.ffmpeg.readFile(paths.audioOnlyOutput);
+          downloadBlob(new Blob([audioData.buffer], { type: "audio/mp4" }), OUTPUT_FILE_NAMES.audioOnly);
+        }
+
+        setProgress(100, "完成しました");
+        addLog("完成しました");
+        showNotice("success", "完成しました", "MP4ファイルのダウンロードを開始しました。");
+      } catch (error) {
+        const friendlyError = getFriendlyError(error);
+        addLog(`エラー: ${error?.message || error}`);
+        setStatus("エラー", "error");
+        showNotice("error", friendlyError.title, friendlyError.detail);
+      } finally {
+        await cleanupVirtualFiles(paths);
+        setProcessingUi(false);
+
+        if (state.isFfmpegLoaded) {
+          setStatus("FFmpeg準備完了", "ready");
+        }
+      }
+    };
+
+    /*
+      ============================================================
+      初期化
+      ============================================================
+    */
+
+    const initialize = () => {
+      restoreSettings();
+      bindSettingsStorage();
+      bindFilePicker(elements.videoInput, elements.videoDropZone, "video");
+      bindFilePicker(elements.audioInput, elements.audioDropZone, "audio");
+      bindFilePicker(elements.thumbnailInput, elements.thumbnailDropZone, "thumbnail");
+      elements.startButton.addEventListener("click", runEncoding);
+
+      window.addEventListener("beforeunload", () => {
+        revokeAllObjectUrls();
+      });
+
+      addLog("動画と音声を選択してください。");
+    };
+
+    initialize();
+  </script>
+</body>
+</html>
