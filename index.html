@@ -1435,24 +1435,40 @@ const loadFfmpeg = async () => {
         const coreBaseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
         const ffmpegBaseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm";
 
-        // 1. ffmpeg-core.js と ffmpeg-core.wasm を Blob URL 化
+        // 1. core.js と wasm を Blob URL 化
         const coreURL = await toBlobURL(`${coreBaseURL}/ffmpeg-core.js`, "text/javascript");
         const wasmURL = await toBlobURL(`${coreBaseURL}/ffmpeg-core.wasm`, "application/wasm");
 
-        // 2. クロスドメイン制限を回避するため、worker.js を fetch して Blob 化する
+        // 2. worker.js を取得し、内部の相対パス(./)をCDN絶対パスに変換
         const workerResponse = await fetch(`${ffmpegBaseURL}/worker.js`);
-        const workerCode = await workerResponse.text();
+        let workerCode = await workerResponse.text();
+        workerCode = workerCode.replaceAll('from "./', `from "${ffmpegBaseURL}/`);
+        workerCode = workerCode.replaceAll("from './", `from '${ffmpegBaseURL}/`);
+
         const classWorkerURL = URL.createObjectURL(
           new Blob([workerCode], { type: "text/javascript" })
         );
 
         addLog("FFmpegワーカーを初期化中...");
 
-        await ffmpeg.load({
-          coreURL,
-          wasmURL,
-          classWorkerURL
-        });
+        // 3. Workerを ES Module モードで起動するための時限パッチ
+        const OriginalWorker = window.Worker;
+        window.Worker = class extends OriginalWorker {
+          constructor(scriptURL, options) {
+            super(scriptURL, { ...options, type: "module" });
+          }
+        };
+
+        try {
+          await ffmpeg.load({
+            coreURL,
+            wasmURL,
+            classWorkerURL
+          });
+        } finally {
+          // Workerクラスを元に戻す
+          window.Worker = OriginalWorker;
+        }
 
         state.isFfmpegLoaded = true;
         setStatus("FFmpeg準備完了", "ready");
