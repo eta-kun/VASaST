@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="ja">
 <head>
@@ -1435,11 +1436,11 @@ const loadFfmpeg = async () => {
         const coreBaseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
         const ffmpegBaseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm";
 
-        // 1. core.js と wasm を Blob URL 化
+        // 1. ffmpeg-core.js と ffmpeg-core.wasm を Blob URL 化
         const coreURL = await toBlobURL(`${coreBaseURL}/ffmpeg-core.js`, "text/javascript");
         const wasmURL = await toBlobURL(`${coreBaseURL}/ffmpeg-core.wasm`, "application/wasm");
 
-        // 2. worker.js を取得し、内部の相対パス(./)をCDN絶対パスに変換
+        // 2. worker.js を取得し、内部の相対パス(./)をCDNの絶対パスに書き換える
         const workerResponse = await fetch(`${ffmpegBaseURL}/worker.js`);
         let workerCode = await workerResponse.text();
         workerCode = workerCode.replaceAll('from "./', `from "${ffmpegBaseURL}/`);
@@ -1451,7 +1452,7 @@ const loadFfmpeg = async () => {
 
         addLog("FFmpegワーカーを初期化中...");
 
-        // 3. Workerを ES Module モードで起動するための時限パッチ
+        // 3. Worker 起動時に type: "module" オプションを自動付与する一時パッチ
         const OriginalWorker = window.Worker;
         window.Worker = class extends OriginalWorker {
           constructor(scriptURL, options) {
