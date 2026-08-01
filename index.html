@@ -929,9 +929,7 @@ import { FFmpeg } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist
 import { fetchFile, toBlobURL } from "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/dist/esm/index.js";
 
 const CDN = {
-  CORE_BASE_URL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd",
-  MIME_JS: "text/javascript",
-  MIME_WASM: "application/wasm"
+  CORE_BASE_URL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd"
 };
 
     const FILE_RULES = {
@@ -1432,13 +1430,11 @@ const loadFfmpeg = async () => {
       });
 
       try {
-        addLog("CDNからスクリプトを取得中...");
-        
-        // ffmpeg-core (UMD) の JS と WASM のみを Blob URL に変換
+        addLog("FFmpegコアファイルを読み込んでいます...");
+
+        // 公式推奨：toBlobURLでcore.jsとcore.wasmを読み込む
         const coreURL = await toBlobURL(`${CDN.CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript");
         const wasmURL = await toBlobURL(`${CDN.CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm");
-
-        addLog("FFmpegワーカーを初期化中...");
 
         await ffmpeg.load({
           coreURL,
@@ -1450,7 +1446,8 @@ const loadFfmpeg = async () => {
         setProgress(PROGRESS_LOAD_MAX, "FFmpeg.wasm 準備完了");
         addLog("FFmpeg.wasm 準備完了");
       } catch (err) {
-        addLog(`読み込みエラー詳細: ${err.message || err}`);
+        addLog(`読み込みエラー: ${err.message || err}`);
+        setStatus("エラー", "error");
         throw err;
       }
     };
