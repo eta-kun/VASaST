@@ -1430,15 +1430,28 @@ const loadFfmpeg = async () => {
       });
 
       try {
-        addLog("FFmpegコアファイルを読み込んでいます...");
+        addLog("CDNからスクリプトを取得中...");
 
-        // 公式推奨：toBlobURLでcore.jsとcore.wasmを読み込む
-        const coreURL = await toBlobURL(`${CDN.CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript");
-        const wasmURL = await toBlobURL(`${CDN.CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm");
+        const coreBaseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd";
+        const ffmpegBaseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/esm";
+
+        // 1. ffmpeg-core.js と ffmpeg-core.wasm を Blob URL 化
+        const coreURL = await toBlobURL(`${coreBaseURL}/ffmpeg-core.js`, "text/javascript");
+        const wasmURL = await toBlobURL(`${coreBaseURL}/ffmpeg-core.wasm`, "application/wasm");
+
+        // 2. クロスドメイン制限を回避するため、worker.js を fetch して Blob 化する
+        const workerResponse = await fetch(`${ffmpegBaseURL}/worker.js`);
+        const workerCode = await workerResponse.text();
+        const classWorkerURL = URL.createObjectURL(
+          new Blob([workerCode], { type: "text/javascript" })
+        );
+
+        addLog("FFmpegワーカーを初期化中...");
 
         await ffmpeg.load({
           coreURL,
-          wasmURL
+          wasmURL,
+          classWorkerURL
         });
 
         state.isFfmpegLoaded = true;
@@ -1446,7 +1459,7 @@ const loadFfmpeg = async () => {
         setProgress(PROGRESS_LOAD_MAX, "FFmpeg.wasm 準備完了");
         addLog("FFmpeg.wasm 準備完了");
       } catch (err) {
-        addLog(`読み込みエラー: ${err.message || err}`);
+        addLog(`読み込みエラー詳細: ${err.message || err}`);
         setStatus("エラー", "error");
         throw err;
       }
